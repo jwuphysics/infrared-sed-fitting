@@ -32,15 +32,21 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 import os
 from scipy.interpolate import interp1d
+from scipy.optimize import minimize
+from scipy.special import erf
 import sys
 
-root_dir = os.path.abspath(os.path.join(os.path.getcwd(), '..'))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 pacs_filter_fnames = {
     70: os.path.join(root_dir, 'data', 'herschel_filters', 'Herschel-Pacs.blue.dat'),
     100: os.path.join(root_dir, 'data', 'herschel_filters', 'Herschel-Pacs.green.dat'),
     160: os.path.join(root_dir, 'data', 'herschel_filters', 'Herschel-Pacs.red.dat')
 }
+
+K15_SED_templates = ['AGN1', 'AGN2', 'AGN3', 'AGN4', 'Composite1', 
+                     'Composite2', 'Composite3', 'Composite4', 
+                     'SFG1', 'SFG2', 'SFG3']
 
 def parse_measurements(measurements):
     """Switch method for different types of flux measurement input. 
@@ -95,7 +101,7 @@ def parse_measurements(measurements):
         except ValueError:
             sys.exit('Flux and uncertainty must be floats.')
 
-    return(clean_measurements)
+    return clean_measurements
 
 def model_sed(template_fname, z):
     """Given a K15 model and redshift, returns the SED in flux density 
@@ -117,28 +123,24 @@ def model_sed(template_fname, z):
     waves = template_sed[:, 0] 
     waves *= (1 + z)
 
+    cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
     D_L = cosmo.luminosity_distance(z)
     
     # flux density [mJy]
     L_nu  = template_sed[:, 1]
     f_nu = (L_nu * (u.W / u.Hz) / (4 * np.pi * D_L**2)).to(u.mJy).value
     
-    return(waves, f_nu)
+    return waves, f_nu
 
-def model_general_photometry(waves, f_nu, wavelength):
-    """Get model flux density near some wavelength.
-    """
-    return f_nu[np.argmin(np.abs(np.log(waves / wavelength)))]
-
-def model_pacs_photometry(waves, f_nu, filter_wavelength, z):
-    """For now, the model must be SFG[1-3], Composite[1-4], or AGN[1-4].
-    The filter_wavelength is in [70, 100, 160] for PACS observations.
+def model_photometry(waves, f_nu, wavelength):
+    """The wavelength is [70, 100, 160] for PACS observations. Otherwise 
+    return nearest flux density for some other central wavelength.
     """
 
-    if filter_wavelength not in [70, 100, 160]: 
-        sys.exit('Enter a correct PACS filter color.')
+    if wavelength not in [70, 100, 160]: 
+        return f_nu[np.argmin(np.abs(np.log(waves / wavelength)))]
 
-    pacs_filter_fname =pacs_filter_fnames[filter_wavelength]
+    pacs_filter_fname = pacs_filter_fnames[wavelength]
 
     filter_waves, transmission = np.genfromtxt(pacs_filter_fname,
                                                unpack=True)
@@ -151,18 +153,61 @@ def model_pacs_photometry(waves, f_nu, filter_wavelength, z):
     
     interp_transmission = func_interp(wave_range)
     
-    flux_density = np.sum([T * f for T, f in zip(interp_transmission, f_nu[within_filter])]) \
-                           / np.sum(interp_transmission)
+    flux_density = np.sum([T * f for T, f in \
+        zip(interp_transmission, f_nu[within_filter])]) / np.sum(interp_transmission)
         
-    return(flux_density)
+    return flux_density
 
-def fit_sed(template, measurements):
+def chi_squared(normalization, modeled_fluxes, measured_fluxes, measured_uncertainties):
+    """Returns the summed chi^2 for all measurements in one template SED.
+    """
+    modeled_fluxes *= normalization
+
+    # for detections, get usual negative log-likelihood
+    detections = 0.5 * (measured_fluxes - modeled_fluxes)**2 / measured_uncertainties**2
+
+    # for nondetections, use survival analysis likelihood, e.g., Feigelson & Nelson (1985)
+    nondetections = 0.5 * (1 + erf(modeled_fluxes / (np.sqrt(2) * measured_uncertainties)))
+
+    return np.sum(np.where(np.isfinite(measured_fluxes), detections, nondetections))
+
+def fit_sed(template, measurements, z, visualize=False):
 
     # TODO: implement models other than K15 comprehensive models
-    template_fname = os.path.join(os.getcwd(), 'data', 'kirkpatrick+15',
+    assert template in K15_SED_templates
+
+    template_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15',
                    'Comprehensive_library', '{}.txt'.format(template))
     if not os.path.isfile(template_fname):
         sys.exit('Invalid template model entered.')
 
+    # get and unpack redshifted wavelengths and SED
+    waves, f_nu = model_sed(template_fname, z)
+
+    # unpack measurements
+    modeled_fluxes, measured_fluxes, measured_uncertainties = measurements.T
+
+    # minimize chi-squared, with normalization (first arg) as free parameter
+    opt_result = minimize(chi_squared, x0=[1.], 
+        args=(modeled_fluxes, measured_fluxes, measured_uncertainties))
+
+    if opt_result['success']:
+        chi2 = opt_result['fun']
+        norm = opt_result['x'][0]
+        print('Template {} successful, with chi^2 = {:.2f}'.format(template, chi2))
+    else:
+        print('Template {} unsuccessful.'.format(template))
+
 if __name__ == '__main__':
+
+    template = 'AGN2'
+
+    input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-1.txt')
+    clean_measurements = parse_measurements(input_measurements)
+
+    fit_sed(template=template, measurements=clean_measurements, z=0.87)
+
+
+    
+
     pass
