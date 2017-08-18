@@ -286,6 +286,5 @@ if __name__ == '__main__':
 
     z = 0.87
     input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-3.txt')
-    #input_measurements = [[100, np.nan, 1.2], [160, 6.5, 1.6], [1300, 0.33, .09]]
 
     best_template, lowest_chi2 = find_best_template(input_measurements, z, visualize=True)
