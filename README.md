@@ -20,11 +20,13 @@ Here's what the data tree looks like:
 ## Examples
 
 ```python
-from fit_sed import find_best_template
+from fit_sed import find_best_template, K15_SED_templates
 
-measurements = [[100, 2.1, 0.4], [160, 4.1, 0.6], [1300, 0.30, .11]]
+measurements = [[100,  2.1,  0.4], 
+                [160,  4.1,  0.6], 
+                [1300, 0.30, 0.11]]
 redshift = 0.9
 
-find_best_template(measurements, redshift, visualize=True)
+find_best_template(measurements, redshift, library=K15_SED_templates, visualize=True)
 ```
 ![An example fit with three measurements](doc/example-fit.png "An example fit with three measurements")
