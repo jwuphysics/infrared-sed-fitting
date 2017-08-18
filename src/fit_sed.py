@@ -36,6 +36,8 @@ from scipy.optimize import minimize
 from scipy.special import erf
 import sys
 
+VISUALIZE = True
+
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 pacs_filter_fnames = {
@@ -105,7 +107,7 @@ def parse_measurements(measurements):
 
     return clean_measurements
 
-def model_sed(template_fname, z):
+def model_sed(template, z):
     """Given a K15 model and redshift, returns the SED in flux density 
     units via two arrays: 
     
@@ -116,6 +118,13 @@ def model_sed(template_fname, z):
         f_nu : 1d array
             observed flux density in mJy
     """
+
+
+    template_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15',
+                   'Comprehensive_library', '{}.txt'.format(template))
+    if not os.path.isfile(template_fname):
+        sys.exit('Invalid template model entered.')
+
     try:
         template_sed = np.genfromtxt(template_fname, skip_header=4)
     except IOError:
@@ -173,18 +182,13 @@ def chi_squared(normalization, model, data, data_err):
 
     return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
-def fit_sed(template, measurements, z, visualize=False):
+def fit_sed(template, measurements, z):
 
     # TODO: implement models other than K15 comprehensive models
     assert template in K15_SED_templates
 
-    template_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15',
-                   'Comprehensive_library', '{}.txt'.format(template))
-    if not os.path.isfile(template_fname):
-        sys.exit('Invalid template model entered.')
-
     # get and unpack redshifted wavelengths and SED
-    waves, f_nu = model_sed(template_fname, z)
+    waves, f_nu = model_sed(template, z)
 
     # unpack measurements and then model what they should be
     measured_waves, measured_fluxes, measured_uncertainties = measurements.T
@@ -199,21 +203,69 @@ def fit_sed(template, measurements, z, visualize=False):
         chi2 = opt_result['fun']
         norm = opt_result['x'][0]
         print('Template {} successful, with chi^2 = {:.2f}'.format(template, chi2))
+
+        return chi2, norm
     else:
         print('Template {} unsuccessful.'.format(template))
 
-if __name__ == '__main__':
+        return np.nan, np.nan
 
-
-    template = 'SFG1'
-
-    input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-1.txt')
+def find_best_template(input_measurements, z, library=K15_SED_templates, visualize=True):
+    """Executes the entire pipeline, attempting to fit all templates to the 
+    measured data.
+    """
     clean_measurements = parse_measurements(input_measurements)
 
-    for template in K15_SED_templates:
-        fit_sed(template=template, measurements=clean_measurements, z=0.87)
+    # record chi^2 of successful templates
+    chi_squareds = np.zeros_like(K15_SED_templates, dtype=float) * np.nan
+    normalizations = np.zeros_like(K15_SED_templates, dtype=float) * np.nan
 
-        # TODO: plot
+    for i, template in enumerate(K15_SED_templates):
+        chi2, norm = fit_sed(template=template, measurements=clean_measurements, z=z)
+
+        chi_squareds[i] = chi2
+        normalizations[i] = norm
+
+    model_order = np.argsort(chi_squareds)
+    lowest_chi2 = np.nanmin(chi_squareds)
     
+    if not VISUALIZE:
+        return
 
-    pass
+    # plot successful models
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    for arg in model_order:
+        model = K15_SED_templates[arg]
+        chi2 = chi_squareds[arg]
+        norm = normalizations[arg]
+        
+        waves, f_nu = model_sed(model, z)
+        
+        if np.isnan(chi2):
+            continue
+        
+        ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), 
+                label=r'{} ($\chi^2={:.2f}$)'.format(model, chi2))
+    
+    ax.errorbar(clean_measurements[:, 0], clean_measurements[:, 1], clean_measurements[:, 2], 
+                color='black', ls='', lw=20, zorder=10)
+    
+    # aesthetics
+    ax.legend(frameon=False, loc='best')
+
+    ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
+    ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
+
+    ax.set_xscale('log')
+    ax.set_xlim(5, 1e3)
+    ax.set_yscale('log')
+
+    plt.show()
+    return
+
+if __name__ == '__main__':
+
+    z = 0.87
+    input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-3.txt')
+
+    find_best_template(input_measurements, z, visualize=True)
