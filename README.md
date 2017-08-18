@@ -22,8 +22,8 @@ Here's what the data tree looks like:
 ```python
 from fit_sed import find_best_template, K15_SED_templates
 
-measurements = [[100,  2.1,  0.4], 
-                [160,  4.1,  0.6], 
+measurements = [[ 100, 2.1,  0.4], 
+                [ 160, 4.1,  0.6], 
                 [1300, 0.30, 0.11]]
 redshift = 0.9
 
