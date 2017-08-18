@@ -20,6 +20,8 @@ unit is unspecified, assume mJy.
 
 TODO list:
 ==========
+ - report integrated IR luminosity
+ - write more comprehensive tests
  - parse SPIRE measurements
  - implement models other than Kirkpatrick+15 comprehensive library
 """
@@ -177,14 +179,24 @@ def chi_squared(normalization, model, data, data_err):
     # for detections, get usual negative log-likelihood
     detections = 0.5 * (data - model)**2 / data_err**2
 
-    # for nondetections, use survival analysis likelihood, e.g., Feigelson & Nelson (1985)
+    # for nondetections, use survival analysis likelihood, e.g., 
+    # Feigelson & Nelson (1985)
     nondetections = 0.5 * (1 + erf(model / (np.sqrt(2) * data_err)))
+
+    # UPDATE: we'll instead use a normal distribution centered on 
+    # zero since it gives the intuitively correct answer when fitting. 
+    #nondetections = 0.5 * (0 - model)**2 / data_err**2
+
+    # For a better treatment, we may want to use the survival function
+    #  for a non-normal distribution... i.e., if we know the  
+    # completeness as a function of flux, we may be able to create a 
+    # log-likelihood of some non-detection for any model prediction.
+    
 
     return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
 def fit_sed(template, measurements, z):
 
-    # TODO: implement models other than K15 comprehensive models
     assert template in K15_SED_templates
 
     # get and unpack redshifted wavelengths and SED
@@ -217,10 +229,10 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
     clean_measurements = parse_measurements(input_measurements)
 
     # record chi^2 of successful templates
-    chi_squareds = np.zeros_like(K15_SED_templates, dtype=float) * np.nan
-    normalizations = np.zeros_like(K15_SED_templates, dtype=float) * np.nan
+    chi_squareds = np.zeros_like(library, dtype=float) * np.nan
+    normalizations = np.zeros_like(library, dtype=float) * np.nan
 
-    for i, template in enumerate(K15_SED_templates):
+    for i, template in enumerate(library):
         chi2, norm = fit_sed(template=template, measurements=clean_measurements, z=z)
 
         chi_squareds[i] = chi2
@@ -229,43 +241,51 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
     model_order = np.argsort(chi_squareds)
     lowest_chi2 = np.nanmin(chi_squareds)
     
-    if not VISUALIZE:
-        return
+    if VISUALIZE:
+        # plot up to the top 5 successful templates
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-    # plot successful models
-    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    for arg in model_order:
-        model = K15_SED_templates[arg]
-        chi2 = chi_squareds[arg]
-        norm = normalizations[arg]
+        NUM_BEST_TEMPLATES = 5
+        for arg in model_order[:NUM_BEST_TEMPLATES]:
+            model = K15_SED_templates[arg]
+            chi2 = chi_squareds[arg]
+            norm = normalizations[arg]
+            
+            waves, f_nu = model_sed(model, z)
+            
+            if np.isnan(chi2):
+                continue
+            
+            ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), 
+                    label=r'{} ($\chi^2={:.2f}$)'.format(model, chi2))
         
-        waves, f_nu = model_sed(model, z)
+        # plot measurements (including upper limits)
+        for measured_wave, measured_flux, measured_uncertainty in clean_measurements:
+            if np.isfinite(measured_flux):
+                ax.errorbar(measured_wave, measured_flux, measured_uncertainty, 
+                    marker='o', color='black', ls='', zorder=10)
+            else:
+                ax.errorbar(measured_wave, 3 * measured_uncertainty, yerr=measured_uncertainty,
+                            color='black', uplims=True)
         
-        if np.isnan(chi2):
-            continue
-        
-        ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), 
-                label=r'{} ($\chi^2={:.2f}$)'.format(model, chi2))
-    
-    ax.errorbar(clean_measurements[:, 0], clean_measurements[:, 1], clean_measurements[:, 2], 
-                color='black', ls='', lw=20, zorder=10)
-    
-    # aesthetics
-    ax.legend(frameon=False, loc='best')
+        # aesthetics
+        ax.legend(frameon=False, loc='best')
 
-    ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
-    ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
+        ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
+        ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
 
-    ax.set_xscale('log')
-    ax.set_xlim(5, 1e3)
-    ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.set_xlim(7, 2e3)
+        ax.set_yscale('log')
 
-    plt.show()
-    return
+        plt.show()
+
+    return library[np.argmin(chi_squareds)], lowest_chi2
 
 if __name__ == '__main__':
 
     z = 0.87
     input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-3.txt')
+    #input_measurements = [[100, np.nan, 1.2], [160, 6.5, 1.6], [1300, 0.33, .09]]
 
-    find_best_template(input_measurements, z, visualize=True)
+    best_template, lowest_chi2 = find_best_template(input_measurements, z, visualize=True)
