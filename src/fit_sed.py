@@ -24,7 +24,7 @@ TODO list:
  - implement models other than Kirkpatrick+15 comprehensive library
 """
 
-from astropy.constants import c
+#from astropy.constants import c
 from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -56,7 +56,7 @@ def parse_measurements(measurements):
     """
     if isinstance(measurements, basestring):
         try:
-            measurements_array = np.genfromtxt(measurements)
+            measurements_array = np.genfromtxt(measurements, dtype=None)
         except IOError:
             sys.exit('String is not valid file of measurements.')
     elif isinstance(measurements, (list, tuple, np.ndarray)):
@@ -65,17 +65,19 @@ def parse_measurements(measurements):
         sys.exit('There is a problem with the measurements.')
 
     # ensure that the array has 2 dimensions
-    if measurements_array.shape == (3,):
-        measurements_array = measurements_array.reshape(1, 3)
+    if len(measurements_array) is 1 or type(measurements_array) is np.void:
+        measurements_array = np.array(measurements_array)
 
     # parse each row at a time and store in clean_measurements array
-    clean_measurements = np.zeros_like(measurements_array, dtype='float')
+    clean_measurements = np.zeros((len(measurements_array), 3), 
+                                  dtype='float')
+
     for i, row in enumerate(measurements_array):
         try:
             observed_wavelength, flux, flux_err = row
         except:
             sys.exit('Each row must have three elements.')
-        
+
         try:
             observed_wavelength = float(observed_wavelength)
         except ValueError:
@@ -158,18 +160,18 @@ def model_photometry(waves, f_nu, wavelength):
         
     return flux_density
 
-def chi_squared(normalization, modeled_fluxes, measured_fluxes, measured_uncertainties):
+def chi_squared(normalization, model, data, data_err):
     """Returns the summed chi^2 for all measurements in one template SED.
     """
-    modeled_fluxes *= normalization
+    model = np.array(model) * normalization
 
     # for detections, get usual negative log-likelihood
-    detections = 0.5 * (measured_fluxes - modeled_fluxes)**2 / measured_uncertainties**2
+    detections = 0.5 * (data - model)**2 / data_err**2
 
     # for nondetections, use survival analysis likelihood, e.g., Feigelson & Nelson (1985)
-    nondetections = 0.5 * (1 + erf(modeled_fluxes / (np.sqrt(2) * measured_uncertainties)))
+    nondetections = 0.5 * (1 + erf(model / (np.sqrt(2) * data_err)))
 
-    return np.sum(np.where(np.isfinite(measured_fluxes), detections, nondetections))
+    return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
 def fit_sed(template, measurements, z, visualize=False):
 
@@ -184,8 +186,10 @@ def fit_sed(template, measurements, z, visualize=False):
     # get and unpack redshifted wavelengths and SED
     waves, f_nu = model_sed(template_fname, z)
 
-    # unpack measurements
-    modeled_fluxes, measured_fluxes, measured_uncertainties = measurements.T
+    # unpack measurements and then model what they should be
+    measured_waves, measured_fluxes, measured_uncertainties = measurements.T
+
+    modeled_fluxes = np.array([model_photometry(waves, f_nu, wave) for wave in measured_waves])
 
     # minimize chi-squared, with normalization (first arg) as free parameter
     opt_result = minimize(chi_squared, x0=[1.], 
@@ -200,14 +204,16 @@ def fit_sed(template, measurements, z, visualize=False):
 
 if __name__ == '__main__':
 
-    template = 'AGN2'
+
+    template = 'SFG1'
 
     input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-1.txt')
     clean_measurements = parse_measurements(input_measurements)
 
-    fit_sed(template=template, measurements=clean_measurements, z=0.87)
+    for template in K15_SED_templates:
+        fit_sed(template=template, measurements=clean_measurements, z=0.87)
 
-
+        # TODO: plot
     
 
     pass
