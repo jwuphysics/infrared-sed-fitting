@@ -274,15 +274,13 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
         # plot up to the top 5 successful templates
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-        NUM_BEST_TEMPLATES = 5
-        for arg in model_order[:NUM_BEST_TEMPLATES]:
+        NUM_BEST_TEMPLATES = 4
+        for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', '-.', ':']):
 
             template = K15_SED_templates[arg]
             chi2 = chi_squareds[arg]
             norm = normalizations[arg]
             L_IR = infrared_luminosity(best_template, norm)
-
-            print(template)
 
             waves, f_nu = model_sed(template, z)
             
@@ -291,7 +289,7 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
             
             log_L_IR_text = r'$\log (L_{{\rm IR}}/L_\odot)={:.2f}$'.format(np.log10(L_IR))
 
-            ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), 
+            ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), ls=ls,
                 label='{} ($\chi^2={:.2f}$, {:s})'.format(template[:3]+template[-1], 
                                                           chi2, log_L_IR_text))
 
