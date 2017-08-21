@@ -26,7 +26,7 @@ TODO list:
  - implement models other than Kirkpatrick+15 comprehensive library
 """
 
-#from astropy.constants import c
+from astropy.constants import c as SPEED_OF_LIGHT
 from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -109,18 +109,9 @@ def parse_measurements(measurements):
 
     return clean_measurements
 
-def model_sed(template, z):
-    """Given a K15 model and redshift, returns the SED in flux density 
-    units via two arrays: 
-    
-    Returns
-    -------
-        waves : 1d array
-            observed wavelengths in microns
-        f_nu : 1d array
-            observed flux density in mJy
-    """
-
+def read_K15_template(template):
+    """Reads in a K15 template SED, returning an array of 
+    wavelength and corresponding array of specific luminosity."""
 
     template_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15',
                    'Comprehensive_library', '{}.txt'.format(template))
@@ -132,15 +123,33 @@ def model_sed(template, z):
     except IOError:
         sys.exit('Something is wrong with the SED template.')
     
-    # observed wavelengths [um]
+    # rest wavelengths, luminosity [um]
     waves = template_sed[:, 0] 
+    L_nu  = template_sed[:, 1]
+
+    return waves, L_nu
+
+
+def model_sed(template, z):
+    """Given a K15 model and redshift, returns the SED in flux density 
+    units via two arrays: 
+    
+    Returns
+    -------
+        waves : 1d array
+            observed wavelengths in microns
+        f_nu : 1d array
+            observed flux density in mJy
+    """
+    waves, L_nu = read_K15_template(template)
+
+    # observed wavelengths
     waves *= (1 + z)
 
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
     D_L = cosmo.luminosity_distance(z)
     
     # flux density [mJy]
-    L_nu  = template_sed[:, 1]
     f_nu = (L_nu * (u.W / u.Hz) / (4 * np.pi * D_L**2)).to(u.mJy).value
     
     return waves, f_nu
@@ -222,6 +231,21 @@ def fit_sed(template, measurements, z):
 
         return np.nan, np.nan
 
+def infrared_luminosity(template, norm=1.):
+    """Calculates the IR luminosity from 8 to 1000 microns, assuming some 
+    normalizing factor, norm (default 1). Returns log_10(L_IR/L_sun)."""
+
+    waves, L_nu = read_K15_template(template)
+
+    wavelength_range = np.logical_and((waves >= 8), (waves <= 1000))
+
+    # integrate L_nu over dnu
+    freqs = SPEED_OF_LIGHT.to(u.micron / u.s).value / waves[wavelength_range] # Hz
+    delta_freqs= freqs[:-1] - freqs[1:]
+    L_IR = np.sum(dnu* l_nu for dnu, l_nu in zip(delta_freqs, L_nu[wavelength_range])) * norm
+
+    return L_IR * (u.W).to(u.Lsun)
+
 def find_best_template(input_measurements, z, library=K15_SED_templates, visualize=True):
     """Executes the entire pipeline, attempting to fit all templates to the 
     measured data.
@@ -231,34 +255,46 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
     # record chi^2 of successful templates
     chi_squareds = np.zeros_like(library, dtype=float) * np.nan
     normalizations = np.zeros_like(library, dtype=float) * np.nan
+    infrared_luminosities = np.zeros_like(library, dtype=float) * np.nan
 
     for i, template in enumerate(library):
         chi2, norm = fit_sed(template=template, measurements=clean_measurements, z=z)
 
         chi_squareds[i] = chi2
         normalizations[i] = norm
+        infrared_luminosities[i] = infrared_luminosity(template, norm)
 
     model_order = np.argsort(chi_squareds)
     lowest_chi2 = np.nanmin(chi_squareds)
-    
+
+    best_template = library[np.nanargmin(chi_squareds)]
+    best_L_IR = infrared_luminosities[np.nanargmin(chi_squareds)]
+
     if VISUALIZE:
         # plot up to the top 5 successful templates
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
         NUM_BEST_TEMPLATES = 5
         for arg in model_order[:NUM_BEST_TEMPLATES]:
-            model = K15_SED_templates[arg]
+
+            template = K15_SED_templates[arg]
             chi2 = chi_squareds[arg]
             norm = normalizations[arg]
-            
-            waves, f_nu = model_sed(model, z)
+            L_IR = infrared_luminosity(best_template, norm)
+
+            print(template)
+
+            waves, f_nu = model_sed(template, z)
             
             if np.isnan(chi2):
                 continue
             
+            log_L_IR_text = r'$\log (L_{{\rm IR}}/L_\odot)={:.2f}$'.format(np.log10(L_IR))
+
             ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), 
-                    label=r'{} ($\chi^2={:.2f}$)'.format(model, chi2))
-        
+                label='{} ($\chi^2={:.2f}$, {:s})'.format(template[:3]+template[-1], 
+                                                          chi2, log_L_IR_text))
+
         # plot measurements (including upper limits)
         for measured_wave, measured_flux, measured_uncertainty in clean_measurements:
             if np.isfinite(measured_flux):
@@ -280,11 +316,11 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
 
         plt.show()
 
-    return library[np.argmin(chi_squareds)], lowest_chi2
+    return best_template, best_L_IR, lowest_chi2
 
 if __name__ == '__main__':
 
     z = 0.87
     input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-3.txt')
 
-    best_template, lowest_chi2 = find_best_template(input_measurements, z, visualize=True)
+    best_template, best_L_IR, lowest_chi2 = find_best_template(input_measurements, z, visualize=True)
