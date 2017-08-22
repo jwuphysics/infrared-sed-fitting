@@ -1,5 +1,6 @@
 data/kirkpatrick+12/*
 data/kirkpatrick+15/*
 data/herschel_filters/*
+results
 *.pyc
 .ipynb_checkpoints

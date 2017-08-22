@@ -246,9 +246,13 @@ def infrared_luminosity(template, norm=1.):
 
     return L_IR * (u.W).to(u.Lsun)
 
-def find_best_template(input_measurements, z, library=K15_SED_templates, visualize=True):
+def find_best_template(input_measurements, z, library=K15_SED_templates, 
+                       visualize=True, ax=None):
     """Executes the entire pipeline, attempting to fit all templates to the 
-    measured data.
+    measured data. 
+
+    If visualize is True and a matplotlib axis object is provided, then the
+    best fits will be plotted on the given axis.
     """
     clean_measurements = parse_measurements(input_measurements)
 
@@ -272,7 +276,8 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
 
     if VISUALIZE:
         # plot up to the top 5 successful templates
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        if ax is not None:
+            fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
         NUM_BEST_TEMPLATES = 4
         for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', '-.', ':']):
@@ -303,8 +308,6 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
                             color='black', uplims=True)
         
         # aesthetics
-        ax.legend(frameon=False, loc='best')
-
         ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
         ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
 
@@ -312,7 +315,9 @@ def find_best_template(input_measurements, z, library=K15_SED_templates, visuali
         ax.set_xlim(7, 2e3)
         ax.set_yscale('log')
 
-        plt.show()
+        # legend
+        ax.legend(frameon=False, loc='best')
+
 
     return best_template, best_L_IR, lowest_chi2
 
