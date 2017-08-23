@@ -276,10 +276,10 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
 
     if VISUALIZE:
         # plot up to the top 5 successful templates
-        if ax is not None:
+        if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-        NUM_BEST_TEMPLATES = 4
+        NUM_BEST_TEMPLATES = 3
         for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', '-.', ':']):
 
             template = K15_SED_templates[arg]
@@ -307,16 +307,16 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
                 ax.errorbar(measured_wave, 3 * measured_uncertainty, yerr=measured_uncertainty,
                             color='black', uplims=True)
         
-        # aesthetics
-        ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
-        ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
-
+        # aesthetics (if within a subplot, then don't show these)
         ax.set_xscale('log')
-        ax.set_xlim(7, 2e3)
         ax.set_yscale('log')
 
+        if ax is None:
+            ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
+            ax.set_ylabel(r'Flux density [mJy]', fontsize=12)
+
         # legend
-        ax.legend(frameon=False, loc='best')
+        ax.legend(frameon=False, loc='lower center')
 
 
     return best_template, best_L_IR, lowest_chi2
