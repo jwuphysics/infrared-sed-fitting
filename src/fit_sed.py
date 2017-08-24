@@ -190,11 +190,11 @@ def chi_squared(normalization, model, data, data_err):
 
     # for nondetections, use survival analysis likelihood, e.g., 
     # Feigelson & Nelson (1985)
-    nondetections = 0.5 * (1 + erf(model / (np.sqrt(2) * data_err)))
+    #nondetections = 0.5 * (1 + erf(model / (np.sqrt(2) * data_err)))
 
     # UPDATE: we'll instead use a normal distribution centered on 
     # zero since it gives the intuitively correct answer when fitting. 
-    #nondetections = 0.5 * (0 - model)**2 / data_err**2
+    nondetections = 0.5 * (0 - model)**2 / data_err**2
 
     # For a better treatment, we may want to use the survival function
     #  for a non-normal distribution... i.e., if we know the  
@@ -204,7 +204,7 @@ def chi_squared(normalization, model, data, data_err):
 
     return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
-def fit_sed(template, measurements, z):
+def fit_sed(template, measurements, z, verbose=True):
 
     assert template in K15_SED_templates
 
@@ -223,11 +223,13 @@ def fit_sed(template, measurements, z):
     if opt_result['success']:
         chi2 = opt_result['fun']
         norm = opt_result['x'][0]
-        print('Template {} successful, with chi^2 = {:.2f}'.format(template, chi2))
+        if verbose:
+            print('Template {} successful, with chi^2 = {:.2f}'.format(template, chi2))
 
         return chi2, norm
     else:
-        print('Template {} unsuccessful.'.format(template))
+        if verbose:
+            print('Template {} unsuccessful.'.format(template))
 
         return np.nan, np.nan
 
@@ -247,7 +249,7 @@ def infrared_luminosity(template, norm=1.):
     return L_IR * (u.W).to(u.Lsun)
 
 def find_best_template(input_measurements, z, library=K15_SED_templates, 
-                       visualize=True, ax=None):
+                       visualize=True, ax=None, verbose=True):
     """Executes the entire pipeline, attempting to fit all templates to the 
     measured data. 
 
@@ -262,7 +264,8 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
     infrared_luminosities = np.zeros_like(library, dtype=float) * np.nan
 
     for i, template in enumerate(library):
-        chi2, norm = fit_sed(template=template, measurements=clean_measurements, z=z)
+        chi2, norm = fit_sed(template=template, measurements=clean_measurements, z=z, 
+                             verbose=verbose)
 
         chi_squareds[i] = chi2
         normalizations[i] = norm
@@ -273,6 +276,7 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
 
     best_template = library[np.nanargmin(chi_squareds)]
     best_L_IR = infrared_luminosities[np.nanargmin(chi_squareds)]
+    best_norm = normalizations[np.nanargmin(chi_squareds)]
 
     if VISUALIZE:
         # plot up to the top 5 successful templates
@@ -280,7 +284,7 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
             fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
         NUM_BEST_TEMPLATES = 3
-        for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', '-.', ':']):
+        for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', ':', '-.']):
 
             template = K15_SED_templates[arg]
             chi2 = chi_squareds[arg]
@@ -291,10 +295,10 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
             
             if np.isnan(chi2):
                 continue
-            
+
             log_L_IR_text = r'$\log (L_{{\rm IR}}/L_\odot)={:.2f}$'.format(np.log10(L_IR))
 
-            ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), ls=ls,
+            ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), ls=ls, c='k',
                 label='{} ($\chi^2={:.2f}$, {:s})'.format(template[:3]+template[-1], 
                                                           chi2, log_L_IR_text))
 
@@ -319,11 +323,11 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
         ax.legend(frameon=False, loc='lower center')
 
 
-    return best_template, best_L_IR, lowest_chi2
+    return best_template, best_L_IR, best_norm
 
 if __name__ == '__main__':
 
     z = 0.87
     input_measurements = os.path.join(root_dir, 'src', 'test', 'test_measurements_a-3.txt')
 
-    best_template, best_L_IR, lowest_chi2 = find_best_template(input_measurements, z, visualize=True)
+    best_template, best_L_IR, best_norm = find_best_template(input_measurements, z, visualize=True)
