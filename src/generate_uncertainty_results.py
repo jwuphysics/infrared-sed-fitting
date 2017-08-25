@@ -70,7 +70,8 @@ if __name__ == '__main__':
             ax.text(0.05, 0.9, name, transform=ax.transAxes, va='bottom', ha='left', fontsize=12)
 
             # plot uncertainties
-            ax.fill_between(waves, L_IR - err_L_IR, L_IR + err_L_IR, lw=0, color='k', alpha=0.5, zorder=0)
+            ax.fill_between(waves, f_nu * (norm - st_dev), f_nu * (norm + st_dev), 
+                            lw=0, color='k', alpha=0.3, zorder=0)
 
             # get error in dex units
             err_dex = np.mean(np.abs(np.log10([1 + st_dev / norm, 1 - st_dev / norm])))
