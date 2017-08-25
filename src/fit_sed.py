@@ -28,6 +28,8 @@ TODO list:
 from astropy.constants import c as SPEED_OF_LIGHT
 from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
+import corner
+import emcee
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
@@ -202,6 +204,18 @@ def chi_squared(normalization, model, data, data_err):
 
     return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
+def lnlike(normalization, model, data, data_err):
+    """Negative chi^2"""
+    model = np.array(model) * normalization
+
+    # for detections do the usual
+    detections = -0.5 * (data - model)**2 / data_err**2
+
+    # nondetections are consistent with noise
+    nondetections = -0.5 * (0 - model)**2 / data_err**2
+
+    return np.sum(np.where(np.isfinite(data), detections, nondetections))
+
 def fit_sed(template, measurements, z, verbose=True):
 
     assert template in K15_SED_templates
@@ -231,6 +245,42 @@ def fit_sed(template, measurements, z, verbose=True):
 
         return np.nan, np.nan
 
+def calculate_uncertainties(norm, modeled_fluxes, measured_fluxes, 
+    measured_uncertainties, nsteps=500, nwalkers=100, nburnin=50, 
+    nthreads=4, save_samples=False, plot_distribution=False):
+    """Uses MCMC sampling to estimate uncertainties on the one parameter,
+    the normalization, which scales the uncertainties on the IR luminosity.
+
+    In all of my runs, this produces a normal pdf, so taking the standard 
+    deviation is a good way to estimate 68% credible intervals.
+    """
+
+    init_params = [norm]
+    ndim = len(init_params)
+
+    init_pos = [init_params + 1e-4 * np.random.randn(ndim) for i in range(nwalkers)]
+    
+    # run emcee
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnlike, threads=nthreads, 
+                                    args=(modeled_fluxes, measured_fluxes, measured_uncertainties))
+
+    sampler.run_mcmc(pos0=init_pos, N=nsteps, rstate0=256)
+
+    # extract sampled normalization
+    samples = sampler.chain[:, nburnin:, :].reshape((-1, ndim))
+
+    # save samples
+    if save_samples:
+        np.save(os.path.join(root_dir, 'results', '{}_{}_samples.npy'.format(name, template)), samples)
+
+    # plot distribution of samples
+    if plot_distribution:
+        corner_fig = corner.corner(samples[:, :], labels=['norm'])
+        corner_fig.savefig(os.path.join(root_dir, 'results', '{}_norm.png'.format(name)), dpi=150)
+
+    return np.std(samples)
+
+
 def infrared_luminosity(template, norm=1.):
     """Calculates the IR luminosity from 8 to 1000 microns, assuming some 
     normalizing factor, norm (default 1). Returns log_10(L_IR/L_sun)."""
@@ -247,7 +297,7 @@ def infrared_luminosity(template, norm=1.):
     return L_IR * (u.W).to(u.Lsun)
 
 def find_best_template(input_measurements, z, library=K15_SED_templates, 
-                       visualize=True, ax=None, verbose=True):
+    NUM_BEST_TEMPLATES=3, visualize=True, ax=None, verbose=True):
     """Executes the entire pipeline, attempting to fit all templates to the 
     measured data. 
 
@@ -281,7 +331,6 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-        NUM_BEST_TEMPLATES = 3
         for arg, ls in zip(model_order[:NUM_BEST_TEMPLATES], ['-', '--', ':', '-.']):
 
             template = K15_SED_templates[arg]
