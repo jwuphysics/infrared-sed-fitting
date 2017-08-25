@@ -20,7 +20,6 @@ unit is unspecified, assume mJy.
 
 TODO list:
 ==========
- - report integrated IR luminosity
  - write more comprehensive tests
  - parse SPIRE measurements
  - implement models other than Kirkpatrick+15 comprehensive library
@@ -200,7 +199,6 @@ def chi_squared(normalization, model, data, data_err):
     #  for a non-normal distribution... i.e., if we know the  
     # completeness as a function of flux, we may be able to create a 
     # log-likelihood of some non-detection for any model prediction.
-    
 
     return np.sum(np.where(np.isfinite(data), detections, nondetections))
 
