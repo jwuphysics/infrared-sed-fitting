@@ -32,11 +32,11 @@ if __name__ == '__main__':
     # get L_IR(SF) fraction lookup table, make into a dict
     SF_fraction_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15', 
                                      'Comprehensive_library', 'SF_fraction.txt')
-    SF_fraction = np.genfromtxt(SF_fraction_fname, usecols=(0, 3, 4), dtype=None)
+    SF_fraction = np.genfromtxt(SF_fraction_fname, dtype=None)
 
     SF_dict = dict()
-    for template, L_IR_SF, err_L_IR_SF in SF_fraction:
-        SF_dict[template] = (L_IR_SF * 1e12, err_L_IR_SF * 12)
+    for template, L_IR_tot, err_L_IR_tot, L_IR_SF, err_L_IR_SF in SF_fraction:
+        SF_dict[template] = (L_IR_tot * 1e12, err_L_IR_tot * 1e12, L_IR_SF * 1e12, err_L_IR_SF * 12)
 
     # prepare plot for results
     fig, axes = plt.subplots(4, 5, figsize=(20, 16), sharex=True, sharey=True)                              
@@ -66,16 +66,20 @@ if __name__ == '__main__':
 
         st_dev = fit_sed.calculate_uncertainties(norm, modeled_fluxes, measured_fluxes, measured_uncertainties,
                                                  nsteps=500, nwalkers=100, nburnin=50, nthreads=4)
-        err_L_IR = (st_dev / norm) * L_IR
+        # this is purely from MCMC 
+        err_L_IR = (st_dev / norm) * L_IR  # [L_sun]
 
         # measure fraction that's due to star formation (Kirkpatrick+15 Table 3)
-        L_SF, err_L_SF = np.array(SF_dict[template])
+        L_tot, err_L_tot, L_SF, err_L_SF = np.array(SF_dict[template]) # [L_sun]
 
-        L_IR_SF = norm * L_SF
-        err_total = np.sqrt(err_L_IR**2 + (norm * err_L_SF)**2)
+        L_IR_SF = norm * L_SF # [L_sun]
+        err_SF = np.sqrt(err_L_IR**2 + (norm * err_L_SF)**2) # [L_sun]
+
+        # total: add MCMC uncertainty to template uncertainty in quadrature
+        err_tot = np.sqrt(err_L_IR**2 + (norm * err_L_tot)**2)
 
         if PRINT_RESULTS:
-            print('{} {} {:.3e} {:.3e} {:.3e} {:.3e}'.format(name, template, L_IR, err_L_IR, L_IR_SF, err_total))
+            print('{} {} {:.3e} {:.3e} {:.3e} {:.3e}'.format(name, template, L_IR, err_tot, L_IR_SF, err_SF))
 
         if PLOT_RESULTS:
             # aesthetics
@@ -90,12 +94,17 @@ if __name__ == '__main__':
                             lw=0, color='k', alpha=0.3, zorder=0)
 
             # get error in dex units
-            err_dex = np.mean(np.abs(np.log10([1 + st_dev / norm, 1 - st_dev / norm])))
+            err_tot_dex = np.mean(np.abs(np.log10([1 + err_tot / L_IR, 1 - err_tot / L_IR])))
+            err_SF_dex = np.mean(np.abs(np.log10([1 + err_SF / L_IR_SF, 1 - err_SF / L_IR_SF])))
 
             # change legend text
             legend_text = ax.get_legend().get_texts()[0]
-            legend_text.set_text(r'{:s} $\log (L_{{\rm IR}} / L_\odot) = {:.2f} \pm {:.2f}$'.format(\
-                template[:3]+template[-1], np.log10(L_IR), err_dex))
+
+            L_IR_text = r'$\log (L_{{\rm IR}} / L_\odot) = {:.2f} \pm {:.2f}$'.format(np.log10(L_IR), err_tot_dex)
+            L_IR_SF_text = r'$\log(L_{{\rm IR}}^{{\rm SF}}/L_\odot) = {:.2f} \pm {:.2f}$'.format(np.log10(L_IR_SF), err_SF_dex)
+
+            legend_text.set_text('\n {:s} {:s}\n {:s}'.format(template[:3]+template[-1], L_IR_text, L_IR_SF_text))
+            legend_text.set_multialignment('right')
 
             if ax is axes[3, 0]:
                 ax.set_xlabel(r'Observed wavelength [$\mu$m]', fontsize=12)
