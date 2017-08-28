@@ -29,6 +29,16 @@ if __name__ == '__main__':
     data_fname = os.path.join(root_dir, 'results', 'lascar_cluster_measurements.cat')
     lascar = np.genfromtxt(data_fname, usecols=(0, 3, 5, 6, 8, 9, 17, 18), dtype=None)
 
+    # get L_IR(SF) fraction lookup table, make into a dict
+    SF_fraction_fname = os.path.join(root_dir, 'data', 'kirkpatrick+15', 
+                                     'Comprehensive_library', 'SF_fraction.txt')
+    SF_fraction = np.genfromtxt(SF_fraction_fname, usecols=(0, 3, 4), dtype=None)
+
+    SF_dict = dict()
+    for template, L_IR_SF, err_L_IR_SF in SF_fraction:
+        SF_dict[template] = (L_IR_SF * 1e12, err_L_IR_SF * 12)
+
+    # prepare plot for results
     fig, axes = plt.subplots(4, 5, figsize=(20, 16), sharex=True, sharey=True)                              
 
     for ax, g in zip(axes.flat, lascar):
@@ -58,8 +68,14 @@ if __name__ == '__main__':
                                                  nsteps=500, nwalkers=100, nburnin=50, nthreads=4)
         err_L_IR = (st_dev / norm) * L_IR
 
+        # measure fraction that's due to star formation (Kirkpatrick+15 Table 3)
+        L_SF, err_L_SF = np.array(SF_dict[template])
+
+        L_IR_SF = norm * L_SF
+        err_total = np.sqrt(err_L_IR**2 + (norm * err_L_SF)**2)
+
         if PRINT_RESULTS:
-            print('{} {} {:.3e} {:.3e}'.format(name, template, L_IR, err_L_IR))
+            print('{} {} {:.3e} {:.3e} {:.3e} {:.3e}'.format(name, template, L_IR, err_L_IR, L_IR_SF, err_total))
 
         if PLOT_RESULTS:
             # aesthetics
