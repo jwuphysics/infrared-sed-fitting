@@ -182,9 +182,12 @@ def model_photometry(waves, f_nu, wavelength):
     return flux_density
 
 def chi_squared(normalization, model, data, data_err):
-    """Returns the summed chi^2 for all measurements in one template SED.
+    """Returns the reduced chi^2 for all measurements in one template SED.
     """
     model = np.array(model) * normalization
+
+    # degrees of freedom = # observations - # params
+    dof = len(data) - 1.
 
     # for detections, get usual negative log-likelihood
     detections = 0.5 * (data - model)**2 / data_err**2
@@ -202,7 +205,7 @@ def chi_squared(normalization, model, data, data_err):
     # completeness as a function of flux, we may be able to create a 
     # log-likelihood of some non-detection for any model prediction.
 
-    return np.sum(np.where(np.isfinite(data), detections, nondetections))
+    return np.sum(np.where(np.isfinite(data), detections, nondetections)) / dof
 
 def lnlike(normalization, model, data, data_err):
     """Negative chi^2"""
