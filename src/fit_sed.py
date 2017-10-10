@@ -349,8 +349,8 @@ def find_best_template(input_measurements, z, library=K15_SED_templates,
             log_L_IR_text = r'$\log (L_{{\rm IR}}/L_\odot)={:.2f}$'.format(np.log10(L_IR))
 
             ax.plot(waves, f_nu * norm, alpha=(0.5 + lowest_chi2 / (2 * chi2)), ls=ls, c='k',
-                label='{} ($\chi^2={:.2f}$, {:s})'.format(template[:3]+template[-1], 
-                                                          chi2, log_L_IR_text))
+                label='{} ($\chi_\nu^2={:.2f}$, {:s})'.format(template[:3]+template[-1], 
+                                                              chi2, log_L_IR_text))
 
         # plot measurements (including upper limits)
         for measured_wave, measured_flux, measured_uncertainty in clean_measurements:
